@@ -1,5 +1,5 @@
 {
-  "name": "jschannel",
+  "name": "hicken-jschannel",
   "version": "1.0.0",
   "description": "Mozilla's Channel mechanism built on top of post-message",
   "main": "src/jschannel.js",

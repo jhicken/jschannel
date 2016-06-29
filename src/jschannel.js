@@ -69,9 +69,9 @@
     var s_boundChans = { };
 
     // add a channel to s_boundChans, throwing if a dup exists
-    function s_addBoundChan(win, origin, scope, handler) {
+    function s_addBoundChan(getWindow, origin, scope, handler) {
         function hasWin(arr) {
-            for (var i = 0; i < arr.length; i++) if (arr[i].win === win) return true;
+            for (var i = 0; i < arr.length; i++) if (arr[i].getWindow() === win) return true;
             return false;
         }
 
@@ -102,13 +102,13 @@
 
         if (typeof s_boundChans[origin] != 'object') s_boundChans[origin] = { };
         if (typeof s_boundChans[origin][scope] != 'object') s_boundChans[origin][scope] = [ ];
-        s_boundChans[origin][scope].push({win: win, handler: handler});
+        s_boundChans[origin][scope].push({getWindow: getWindow, handler: handler});
     }
 
     function s_removeBoundChan(win, origin, scope) {
         var arr = s_boundChans[origin][scope];
         for (var i = 0; i < arr.length; i++) {
-            if (arr[i].win === win) {
+            if (arr[i].getWindow() === win) {
                 arr.splice(i,1);
             }
         }
@@ -173,7 +173,7 @@
             var delivered = false;
             if (s_boundChans[o] && s_boundChans[o][s]) {
                 for (var j = 0; j < s_boundChans[o][s].length; j++) {
-                    if (s_boundChans[o][s][j].win === w) {
+                    if (s_boundChans[o][s][j].getWindow() === w) {
                         s_boundChans[o][s][j].handler(o, meth, m);
                         delivered = true;
                         break;
@@ -183,7 +183,7 @@
 
             if (!delivered && s_boundChans['*'] && s_boundChans['*'][s]) {
                 for (var j = 0; j < s_boundChans['*'][s].length; j++) {
-                    if (s_boundChans['*'][s][j].win === w) {
+                    if (s_boundChans['*'][s][j].getWindow() === w) {
                         s_boundChans['*'][s][j].handler(o, meth, m);
                         break;
                     }
@@ -207,6 +207,7 @@
      * Arguments to Channel.build(cfg):
      *
      *   cfg.window - the remote window with which we'll communicate
+     *   cfg.iframe - the iframe with which we'll communicate (overrides cfg.window)
      *   cfg.origin - the expected origin of the remote window, may be '*'
      *                which matches any origin
      *   cfg.scope  - the 'scope' of messages.  a scope string that is
@@ -268,11 +269,11 @@
             /* basic argument validation */
             if (typeof cfg != 'object') throw("Channel build invoked without a proper object argument");
 
-            if (!cfg.window || !cfg.window.postMessage) throw("Channel.build() called without a valid window argument");
+            if (!getWindow() || !getWindow().postMessage) throw("Channel.build() called without a valid window argument");
 
             /* we'd have to do a little more work to be able to run multiple channels that intercommunicate the same
              * window...  Not sure if we care to support that */
-            if (window === cfg.window) throw("target window is same as present window -- not allowed");
+            if (window === getWindow()) throw("target window is same as present window -- not allowed");
 
             // let's require that the client specify an origin.  if we just assume '*' we'll be
             // propagating unsafe practices.  that would be lame.
@@ -511,7 +512,7 @@
             };
 
             // now register our bound channel for msg routing
-            s_addBoundChan(cfg.window, cfg.origin, cfg.scope, onMessage);
+            s_addBoundChan(getWindow.bind(this), cfg.origin, cfg.scope, onMessage);
 
             // scope method names based on cfg.scope specified when the Channel was instantiated
             var scopeMethod = function(m) {
@@ -536,7 +537,7 @@
                         }
                     }
                     debug("post message: " + JSON.stringify(msg) + " with origin " + cfg.origin);
-                    cfg.window.postMessage(JSON.stringify(msg), cfg.origin);
+                    getWindow().postMessage(JSON.stringify(msg), cfg.origin);
                 }
             };
 
@@ -586,6 +587,18 @@
                 if (typeof cfg.onReady === 'function') cfg.onReady(obj);
 
             };
+
+            function getWindow() {
+              if(cfg.iframe && cfg.iframe.contentWindow) {
+                return cfg.iframe.contentWindow;
+              } else if (cfg.window){
+                return cfg.window;
+              } else {
+                return {  // fake window to allow events to fire
+                  postMessage: function(){}
+                };
+              }
+            }
 
             var createStubs = function(stubList, targetObj) {
                 stubList = [].concat(stubList); // Coerce into array, allows string to be used for single-item array
@@ -718,7 +731,7 @@
                     postMessage({ method: scopeMethod(m.method), params: m.params });
                 },
                 destroy: function () {
-                    s_removeBoundChan(cfg.window, cfg.origin, cfg.scope);
+                    s_removeBoundChan(getWindow(), cfg.origin, cfg.scope);
                     if (window.removeEventListener) window.removeEventListener('message', onMessage, false);
                     else if(window.detachEvent) window.detachEvent('onmessage', onMessage);
                     ready = false;
